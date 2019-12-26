@@ -1,0 +1,4 @@
+# Simple config to control which universes should be translated/sent.
+
+universe: [69,70]
+port: 8080
