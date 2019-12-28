@@ -1,4 +1,5 @@
 # Simple config to control which universes should be translated/sent.
 
-universe: [69,70]
-port: 8080
+universe: [69,70]   # Universes that should be available to control.
+ip: "127.0.0.1:8080" # On which IP should rest2sacn listen?
+destination: "127.0.0.1"    # IP of the device the sACN data should be transmitted.
