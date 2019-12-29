@@ -31,9 +31,7 @@ func main() {
 
 	// rest API setup
 	router := mux.NewRouter()
-	router.HandleFunc("/index", indexHandler)
-	router.HandleFunc("/sacn/reset", resetHandler)
-	// universe range 1-63999 , channel range 1-512, value range 0-255
+	router.HandleFunc("/sacn/reset/{universe}", resetHandler)
 	router.HandleFunc("/sacn/send/{universe}/{channel}/{value}", sacnHandler)
 
 	srv := &http.Server{
@@ -54,6 +52,11 @@ type Universe struct {
 	number uint16
 	data   [512]byte
 	output chan<- [512]byte
+}
+
+// Send outputs the currently stored data in the universe
+func (u *Universe) Send() {
+	u.output <- u.data
 }
 
 // setupSACN activates all universes and makes them ready for transmitting
@@ -79,7 +82,7 @@ func setupSACN(c Config) {
 		// Send universe to be sent out unicast to destination
 		trans.SetDestinations(u.number, []string{c.Destination})
 		// finished
-		log.Println("Setup completed for universe", u)
+		log.Println("Setup completed for universe", u.number)
 	}
 }
 
