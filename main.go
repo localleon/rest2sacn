@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -12,9 +11,6 @@ import (
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
 )
-
-// Storing universe channels
-var universes map[int]chan<- [512]byte
 
 func main() {
 	// Flags for the Application
@@ -32,20 +28,13 @@ func main() {
 	// set all required sACN Options/Parameters
 	setupSACN(c)
 	defer closeSACN()
-	fmt.Println(universes)
-
-	for {
-		universes[69] <- [512]byte{255, 255}
-		time.Sleep(1 * time.Second)
-		universes[69] <- [512]byte{255, 0}
-		log.Println("changed")
-	}
 
 	// rest API setup
 	router := mux.NewRouter()
 	router.HandleFunc("/index", indexHandler)
 	router.HandleFunc("/sacn/reset", resetHandler)
-	router.HandleFunc("/sacn/{universe:[1-63999]}/{channel:[1-512]}/{value:[0-255]}", sacnHandler)
+	// universe range 1-63999 , channel range 1-512, value range 0-255
+	router.HandleFunc("/sacn/send/{universe}/{channel}/{value}", sacnHandler)
 
 	srv := &http.Server{
 		Handler: router,
@@ -57,34 +46,48 @@ func main() {
 	log.Fatal(srv.ListenAndServe())
 }
 
-// closeSACN goes through all open sACN channels and closes them
-func closeSACN() {
-	for _, channel := range universes {
-		close(channel)
-	}
+// UniverseOutput stores all configured universes and their current data
+var UniverseOutput map[int]Universe
+
+// Universe represents a DMX Universe sent out over sACN
+type Universe struct {
+	number uint16
+	data   [512]byte
+	output chan<- [512]byte
 }
 
+// setupSACN activates all universes and makes them ready for transmitting
 func setupSACN(c Config) {
-	universes = make(map[int]chan<- [512]byte)
-
+	UniverseOutput = make(map[int]Universe) // global storage to access from rest Handlers
+	// setup main transmitter.
 	trans, err := sacn.NewTransmitter("", [16]byte{1, 2, 3}, "rest2sacn")
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	// Configuring all universes
 	for _, univ := range c.Universe {
-		var err error = nil
-		universes[int(univ)], err = trans.Activate(univ)
+		// Activate and store channel in global var
+		ch, err := trans.Activate(univ)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println("Setup completed for universe", univ)
-
+		u := Universe{
+			number: univ,
+			output: ch,
+		}
+		UniverseOutput[int(univ)] = u
 		// Send universe to be sent out unicast to destination
-		trans.SetDestinations(univ, []string{c.Destination})
+		trans.SetDestinations(u.number, []string{c.Destination})
+		// finished
+		log.Println("Setup completed for universe", u)
 	}
+}
 
+// closeSACN goes through all open sACN channels and closes them
+func closeSACN() {
+	for _, univ := range UniverseOutput {
+		close(univ.output)
+	}
 }
 
 // Config represents the YAML Config file of the application
